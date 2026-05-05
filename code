@@ -1,0 +1,262 @@
+.MODEL SMALL
+.STACK 100H
+
+; =============================================================
+; MACRO DEFINITIONS (Feature 1: Welcome & UI)
+; =============================================================
+
+PRINT_MSG MACRO MSG_ADDR
+    LEA DX, MSG_ADDR
+    MOV AH, 09H
+    INT 21H
+ENDM
+
+PRINT_NL MACRO
+    MOV AH, 02H
+    MOV DL, 0DH
+    INT 21H
+    MOV DL, 0AH
+    INT 21H
+ENDM
+
+READ_CHAR MACRO
+    MOV AH, 01H
+    INT 21H
+ENDM
+
+; =============================================================
+; DATA SEGMENT
+; =============================================================
+.DATA
+    BANNER      DB 0DH, 0AH, "****************************************************************"
+                DB 0DH, 0AH, "* DAILY ROUTINE PLANNER v1.0                 *"
+                DB 0DH, 0AH, "****************************************************************$"
+    
+    ASK_NAME    DB 0DH, 0AH, ">>> Please enter your name: $"
+    WELCOME     DB 0DH, 0AH, "--- Welcome to your dashboard, $"
+    
+    MENU        DB 0DH, 0AH, "========================================"
+                DB 0DH, 0AH, " [1] Input Daily Tasks (Morn/Aft/Eve) "
+                DB 0DH, 0AH, " [2] View All Tasks "
+                DB 0DH, 0AH, " [3] Mark Status (Complete/Pending) "
+                DB 0DH, 0AH, " [4] Show Reminders "
+                DB 0DH, 0AH, " [5] Exit "
+                DB 0DH, 0AH, "========================================"
+                DB 0DH, 0AH, "Select an option: $"
+
+    ; Input Prompts (Feature 2)
+    P_MORN      DB 0DH, 0AH, "Enter Morning Task: $"
+    P_AFT       DB 0DH, 0AH, "Enter Afternoon Task: $"
+    P_EVE       DB 0DH, 0AH, "Enter Evening Task: $"
+
+    ; Labels (Feature 4)
+    L_MORN      DB 0DH, 0AH, "[Morning]   : $"
+    L_AFT       DB 0DH, 0AH, "[Afternoon] : $"
+    L_EVE       DB 0DH, 0AH, "[Evening]   : $"
+
+    ; Status Prompts (Feature 5)
+    P_STATUS    DB 0DH, 0AH, "Is this task completed? (y/n): $"
+    S_DONE      DB " [DONE] $"
+    S_PEND      DB " [PENDING] $"
+    
+    ; Reminder (Feature 6)
+    REM_MSG     DB 0DH, 0AH, "!!! REMINDER: You have pending tasks to finish! !!!$"
+    ALL_CLR     DB 0DH, 0AH, "Great job! All tasks are finished for today.$"
+
+    ; --- STORAGE (Feature 3) ---
+    STR_SIZE    EQU 25
+    USER_NAME   DB STR_SIZE, ?, STR_SIZE DUP('$')
+    TASK_MORN   DB STR_SIZE, ?, STR_SIZE DUP('$')
+    TASK_AFT    DB STR_SIZE, ?, STR_SIZE DUP('$')
+    TASK_EVE    DB STR_SIZE, ?, STR_SIZE DUP('$')
+    
+    ; Status Flags: 0 = Pending, 1 = Completed
+    STAT_MORN   DB 0
+    STAT_AFT    DB 0
+    STAT_EVE    DB 0
+
+    IN_BUF      DB STR_SIZE, ?, STR_SIZE DUP('$')
+
+; =============================================================
+; CODE SEGMENT
+; =============================================================
+.CODE
+MAIN PROC
+    MOV AX, @DATA
+    MOV DS, AX
+
+    PRINT_MSG BANNER
+    
+    ; Feature 1: Name and Welcome
+    PRINT_MSG ASK_NAME
+    LEA DX, USER_NAME
+    MOV AH, 0AH
+    INT 21H
+    
+    PRINT_MSG WELCOME
+    LEA DX, USER_NAME + 2
+    MOV AH, 09H
+    INT 21H
+    PRINT_MSG BANNER
+
+MAIN_MENU:
+    PRINT_MSG MENU
+    READ_CHAR
+    SUB AL, 30H
+    
+    CMP AL, 1
+    JE CALL_INPUT
+    CMP AL, 2
+    JE CALL_VIEW
+    CMP AL, 3
+    JE CALL_STATUS
+    CMP AL, 4
+    JE CALL_REMIND
+    CMP AL, 5
+    JE EXIT_PROG
+    JMP MAIN_MENU
+
+CALL_INPUT:
+    CALL INPUT_TASKS
+    JMP MAIN_MENU
+CALL_VIEW:
+    CALL VIEW_TASKS
+    JMP MAIN_MENU
+CALL_STATUS:
+    CALL UPDATE_STATUS
+    JMP MAIN_MENU
+CALL_REMIND:
+    CALL SHOW_REMINDER
+    JMP MAIN_MENU
+
+EXIT_PROG:
+    MOV AH, 4CH
+    INT 21H
+MAIN ENDP
+
+; =============================================================
+; PROCEDURES
+; =============================================================
+
+; Feature 2 & 3: Input and Store
+INPUT_TASKS PROC
+    PRINT_MSG P_MORN
+    LEA DX, TASK_MORN
+    MOV AH, 0AH
+    INT 21H
+
+    PRINT_MSG P_AFT
+    LEA DX, TASK_AFT
+    MOV AH, 0AH
+    INT 21H
+
+    PRINT_MSG P_EVE
+    LEA DX, TASK_EVE
+    MOV AH, 0AH
+    INT 21H
+    RET
+INPUT_TASKS ENDP
+
+; Feature 4: Display with Loop Logic
+VIEW_TASKS PROC
+    PRINT_MSG L_MORN
+    LEA DX, TASK_MORN + 2
+    MOV AH, 09H
+    INT 21H
+    CALL PRINT_STAT_ICON_M
+    
+    PRINT_MSG L_AFT
+    LEA DX, TASK_AFT + 2
+    MOV AH, 09H
+    INT 21H
+    CALL PRINT_STAT_ICON_A
+
+    PRINT_MSG L_EVE
+    LEA DX, TASK_EVE + 2
+    MOV AH, 09H
+    INT 21H
+    CALL PRINT_STAT_ICON_E
+    
+    PRINT_NL
+    RET
+VIEW_TASKS ENDP
+
+; Feature 5: Check and Update Status
+UPDATE_STATUS PROC
+    PRINT_MSG L_MORN
+    PRINT_MSG P_STATUS
+    READ_CHAR
+    CMP AL, 'y'
+    JE SET_M_DONE
+    MOV STAT_MORN, 0
+    JMP NEXT_A
+SET_M_DONE:
+    MOV STAT_MORN, 1
+
+NEXT_A:
+    PRINT_MSG L_AFT
+    PRINT_MSG P_STATUS
+    READ_CHAR
+    CMP AL, 'y'
+    JE SET_A_DONE
+    MOV STAT_AFT, 0
+    JMP NEXT_E
+SET_A_DONE:
+    MOV STAT_AFT, 1
+
+NEXT_E:
+    PRINT_MSG L_EVE
+    PRINT_MSG P_STATUS
+    READ_CHAR
+    CMP AL, 'y'
+    JE SET_E_DONE
+    MOV STAT_EVE, 0
+    RET
+SET_E_DONE:
+    MOV STAT_EVE, 1
+    RET
+UPDATE_STATUS ENDP
+
+; Feature 6: Reminder Message
+SHOW_REMINDER PROC
+    ; Check if any status is 0
+    CMP STAT_MORN, 0
+    JE NEED_REMIND
+    CMP STAT_AFT, 0
+    JE NEED_REMIND
+    CMP STAT_EVE, 0
+    JE NEED_REMIND
+    
+    PRINT_MSG ALL_CLR
+    RET
+NEED_REMIND:
+    PRINT_MSG REM_MSG
+    RET
+SHOW_REMINDER ENDP
+
+; --- Helper Procedures for Icons ---
+PRINT_STAT_ICON_M:
+    CMP STAT_MORN, 1
+    JE P_M_D
+    PRINT_MSG S_PEND
+    RET
+P_M_D: PRINT_MSG S_DONE
+    RET
+
+PRINT_STAT_ICON_A:
+    CMP STAT_AFT, 1
+    JE P_A_D
+    PRINT_MSG S_PEND
+    RET
+P_A_D: PRINT_MSG S_DONE
+    RET
+
+PRINT_STAT_ICON_E:
+    CMP STAT_EVE, 1
+    JE P_E_D
+    PRINT_MSG S_PEND
+    RET
+P_E_D: PRINT_MSG S_DONE
+    RET
+
+END MAIN
